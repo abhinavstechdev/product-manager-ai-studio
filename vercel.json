@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "framework": "vite",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/.well-known/:match*",
+      "destination": "/api/oauth/:match*"
+    },
+    {
+      "source": "/((?!api|.*\\..*).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "NexusAI Inventory & Order Platform",
+  "description": "Production AI-driven Inventory, Product, Customer & Manual Order Management platform with Streamable HTTP Remote MCP Server and OAuth 2.1 authorization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

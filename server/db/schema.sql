@@ -1,0 +1,232 @@
+-- NexusAI Inventory & Order Platform Database Schema (PostgreSQL / Neon compatible)
+
+CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(64) PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS workspaces (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(64) UNIQUE NOT NULL,
+    currency VARCHAR(10) DEFAULT 'INR',
+    owner_id VARCHAR(64) REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS workspace_members (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE CASCADE,
+    role VARCHAR(32) NOT NULL, -- OWNER, ADMIN, INVENTORY_MANAGER, ORDER_MANAGER, PACKER, VIEWER
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(workspace_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) NOT NULL,
+    description TEXT,
+    is_archived BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(workspace_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS products (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    sku VARCHAR(100) NOT NULL,
+    barcode VARCHAR(100),
+    description TEXT,
+    category_id VARCHAR(64) REFERENCES categories(id) ON DELETE SET NULL,
+    purchase_cost NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    selling_price NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    physical_stock INTEGER NOT NULL DEFAULT 0,
+    reserved_stock INTEGER NOT NULL DEFAULT 0,
+    reorder_threshold INTEGER NOT NULL DEFAULT 10,
+    is_archived BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(workspace_id, sku)
+);
+
+CREATE TABLE IF NOT EXISTS inventory_transactions (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    product_id VARCHAR(64) REFERENCES products(id) ON DELETE CASCADE,
+    quantity_change INTEGER NOT NULL,
+    previous_quantity INTEGER NOT NULL,
+    new_quantity INTEGER NOT NULL,
+    type VARCHAR(64) NOT NULL, -- OPENING_STOCK, STOCK_RECEIVED, MANUAL_ADJUSTMENT, STOCK_RESERVED, RESERVATION_RELEASED, ORDER_DISPATCHED, RETURN_RECEIVED, RETURN_APPROVED_FOR_RESALE, DAMAGED_GOODS, STOCK_CORRECTION
+    reason TEXT NOT NULL,
+    order_id VARCHAR(64),
+    actor_id VARCHAR(64),
+    actor_name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS customers (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    phone VARCHAR(50),
+    email VARCHAR(255),
+    shipping_address TEXT,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    order_number VARCHAR(64) NOT NULL,
+    customer_id VARCHAR(64) REFERENCES customers(id) ON DELETE SET NULL,
+    customer_name VARCHAR(255) NOT NULL,
+    customer_email VARCHAR(255),
+    customer_phone VARCHAR(50),
+    shipping_address TEXT NOT NULL,
+    order_source VARCHAR(64) NOT NULL DEFAULT 'WEBSITE', -- WHATSAPP, PHONE, INSTAGRAM, FACEBOOK, WEBSITE, WALK_IN, OTHER
+    status VARCHAR(64) NOT NULL DEFAULT 'NEW', -- NEW, CONFIRMED, PROCESSING, PACKED, SHIPPED, DELIVERED, CANCELLED, RETURNED
+    subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    order_discount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    shipping_fee NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    total_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    payment_status VARCHAR(64) NOT NULL DEFAULT 'UNPAID', -- UNPAID, PARTIALLY_PAID, PAID, REFUNDED
+    payment_method VARCHAR(64) DEFAULT 'CASH_ON_DELIVERY',
+    notes TEXT,
+    packing_notes TEXT,
+    order_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(workspace_id, order_number)
+);
+
+CREATE TABLE IF NOT EXISTS order_items (
+    id VARCHAR(64) PRIMARY KEY,
+    order_id VARCHAR(64) REFERENCES orders(id) ON DELETE CASCADE,
+    product_id VARCHAR(64) REFERENCES products(id),
+    sku VARCHAR(100) NOT NULL,
+    product_name VARCHAR(255) NOT NULL,
+    quantity INTEGER NOT NULL,
+    unit_price NUMERIC(12, 2) NOT NULL,
+    item_discount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    total_price NUMERIC(12, 2) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS order_status_history (
+    id VARCHAR(64) PRIMARY KEY,
+    order_id VARCHAR(64) REFERENCES orders(id) ON DELETE CASCADE,
+    previous_status VARCHAR(64),
+    new_status VARCHAR(64) NOT NULL,
+    actor_name VARCHAR(255) NOT NULL,
+    note TEXT,
+    source VARCHAR(32) NOT NULL DEFAULT 'WEB', -- WEB, MCP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS shipments (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    order_id VARCHAR(64) REFERENCES orders(id) ON DELETE CASCADE,
+    courier VARCHAR(100) NOT NULL,
+    tracking_number VARCHAR(100) NOT NULL,
+    shipping_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    expected_delivery_date TIMESTAMP WITH TIME ZONE,
+    status VARCHAR(64) NOT NULL DEFAULT 'IN_TRANSIT',
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    order_id VARCHAR(64) REFERENCES orders(id) ON DELETE CASCADE,
+    amount NUMERIC(12, 2) NOT NULL,
+    payment_method VARCHAR(64) NOT NULL, -- CASH, COD, UPI, BANK_TRANSFER, OTHER
+    reference_number VARCHAR(100),
+    payment_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS returns (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    order_id VARCHAR(64) REFERENCES orders(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    status VARCHAR(64) NOT NULL DEFAULT 'PENDING', -- PENDING, APPROVED, REJECTED
+    refund_amount NUMERIC(12, 2) DEFAULT 0.00,
+    return_notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS return_items (
+    id VARCHAR(64) PRIMARY KEY,
+    return_id VARCHAR(64) REFERENCES returns(id) ON DELETE CASCADE,
+    product_id VARCHAR(64) REFERENCES products(id),
+    sku VARCHAR(100) NOT NULL,
+    product_name VARCHAR(255) NOT NULL,
+    quantity INTEGER NOT NULL,
+    condition VARCHAR(64) NOT NULL DEFAULT 'SELLABLE', -- DAMAGED, SELLABLE
+    approved_for_resale BOOLEAN DEFAULT FALSE,
+    restored_to_stock BOOLEAN DEFAULT FALSE
+);
+
+CREATE TABLE IF NOT EXISTS audit_events (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    request_id VARCHAR(64) NOT NULL,
+    actor_name VARCHAR(255) NOT NULL,
+    tool_name VARCHAR(100),
+    operation VARCHAR(100) NOT NULL,
+    target_record VARCHAR(255),
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    outcome VARCHAR(64) NOT NULL, -- SUCCESS, FAILURE, PENDING_CONFIRMATION
+    before_value JSONB,
+    after_value JSONB,
+    confirmation_reference VARCHAR(64)
+);
+
+CREATE TABLE IF NOT EXISTS oauth_clients (
+    id VARCHAR(64) PRIMARY KEY,
+    client_id VARCHAR(100) UNIQUE NOT NULL,
+    client_secret VARCHAR(255),
+    client_name VARCHAR(255) NOT NULL,
+    redirect_uris TEXT[] NOT NULL,
+    allowed_scopes TEXT[] NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS oauth_grants (
+    id VARCHAR(64) PRIMARY KEY,
+    client_id VARCHAR(100) NOT NULL,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE CASCADE,
+    code VARCHAR(128) UNIQUE,
+    code_challenge VARCHAR(128),
+    code_challenge_method VARCHAR(16),
+    access_token VARCHAR(255) UNIQUE,
+    refresh_token VARCHAR(255) UNIQUE,
+    scopes TEXT[] NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS pending_confirmations (
+    id VARCHAR(64) PRIMARY KEY,
+    workspace_id VARCHAR(64) REFERENCES workspaces(id) ON DELETE CASCADE,
+    token VARCHAR(128) UNIQUE NOT NULL,
+    tool_name VARCHAR(100) NOT NULL,
+    action_description TEXT NOT NULL,
+    params JSONB NOT NULL,
+    required_scope VARCHAR(100) NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING'
+);
