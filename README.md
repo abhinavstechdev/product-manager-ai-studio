@@ -114,6 +114,33 @@ MCP_SERVER_URL="https://your-project.vercel.app/api/mcp"
 
 ## 4. Connecting AI Assistants via MCP
 
+### Endpoints
+The Streamable HTTP MCP server is available at two interchangeable paths:
+- `http://localhost:3000/mcp` (OpenAI / standard default)
+- `http://localhost:3000/api/mcp` (Vercel API route)
+
+### MCP Inspector
+Test the server locally using the official inspector:
+```bash
+npx @modelcontextprotocol/inspector
+```
+Select **Streamable HTTP** transport and connect to:
+```
+http://localhost:3000/mcp
+```
+
+### OpenAI ChatGPT & Codex Integration
+NexusAI fully adheres to OpenAI's developer specifications:
+1. **Server Instructions**: Returns high-priority initialization guidance in `instructions` (order verification, confirmation rules).
+2. **Tool Safety Annotations**: Declares `readOnlyHint`, `destructiveHint`, and `openWorldHint` across all tools.
+3. **Structured Content**: Tools return both `structuredContent` and readable `content` text blocks.
+4. **Account Identification (`_meta["openai/profile"]`)**: Exposes `get_profile` tool marked with `_meta: { "openai/profile": true }` to identify connected accounts and multi-account workspaces.
+5. **Company Knowledge Compatibility**: Implements standard `search` and `fetch` tools for company knowledge citation indexing.
+6. **SEP-2640 Skills Extension**: Implements `io.modelcontextprotocol/skills` extension advertising:
+   - `skills/list`: Paginated skill manifest with SHA-256 digests.
+   - `skills/get`: Fetching full skill metadata by URI.
+   - `resources/read`: Fetching supporting skill markdown documents (`skill://nexus-inventory/inventory-order-ops/...`).
+
 ### Claude Desktop
 Open your Claude Desktop configuration file:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
@@ -124,7 +151,7 @@ Add the following configuration:
 {
   "mcpServers": {
     "nexus-inventory": {
-      "url": "https://your-project.vercel.app/api/mcp",
+      "url": "https://your-project.vercel.app/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_ACCESS_TOKEN"
       }
@@ -136,7 +163,7 @@ Add the following configuration:
 
 ### Testing with cURL
 ```bash
-curl -X POST "http://localhost:3000/api/mcp" \
+curl -X POST "http://localhost:3000/mcp" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -155,7 +182,9 @@ curl -X POST "http://localhost:3000/api/mcp" \
 
 Run all unit, integration, isolation, and security tests:
 ```bash
-npm run test  # or click "Run All Automated Tests" in the Web Dashboard
+# In the Web Dashboard: Open "Automated Tests" tab and click "Run All Automated Tests"
+# Or run via API:
+curl -s http://localhost:3000/api/tests/run
 ```
 
 Tests verify:
@@ -163,5 +192,7 @@ Tests verify:
 - Oversell rejection under concurrent orders
 - Atomic stock decrement and reservation release on order dispatch
 - Quarantined returns until inspection approval
+- OpenAI profile metadata and company knowledge `search`/`fetch`
 - OAuth 2.1 RFC 7636 PKCE S256 challenge verification
 - Cross-workspace tenant data isolation
+

@@ -217,7 +217,7 @@ export async function runAllAutomatedTests(): Promise<{ passed: number; failed: 
     assert('Physical Stock Restored to 57 via Resale Approval Ledger', 'Inventory', stockAfterApproval.physical_stock === 57);
 
     // 10. MCP Tool Discovery & Execution
-    assert('MCP Tool Discovery: All 72 Tools Registered', 'MCP', Object.keys(mcpTools).length >= 70);
+    assert('MCP Tool Discovery: All Tools Registered', 'MCP', Object.keys(mcpTools).length >= 70);
 
     // MCP Read tool execution
     const mcpOverview = await mcpTools.get_business_overview.handler(testWs, {}, 'AI Agent');
@@ -225,6 +225,17 @@ export async function runAllAutomatedTests(): Promise<{ passed: number; failed: 
 
     const mcpStockCheck = await mcpTools.get_product_stock.handler(testWs, { sku_or_id: testSku }, 'AI Agent');
     assert('MCP get_product_stock Execution', 'MCP', mcpStockCheck.physical_stock === 57);
+
+    // OpenAI Profile Tool Verification
+    const profile = await mcpTools.get_profile.handler(testWs, {}, 'AI Agent');
+    assert('OpenAI Profile Tool (get_profile) Metadata & Execution', 'MCP', !!profile.email && mcpTools.get_profile._meta?.['openai/profile'] === true);
+
+    // Company Knowledge Search & Fetch Verification
+    const searchRes = await mcpTools.search.handler(testWs, { query: testSku }, 'AI Agent');
+    assert('Company Knowledge Search Tool Execution', 'MCP', Array.isArray(searchRes.results) && searchRes.results.length > 0);
+
+    const fetchRes = await mcpTools.fetch.handler(testWs, { id: `product:${testSku}` }, 'AI Agent');
+    assert('Company Knowledge Fetch Document Tool Execution', 'MCP', fetchRes.title.includes(testSku));
 
     // MCP High-Impact Confirmation Policy Enforcement
     assert('High-Impact Confirmation Policy Flag on adjust_inventory', 'MCP', mcpTools.adjust_inventory.isHighImpact === true);

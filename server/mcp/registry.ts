@@ -8,19 +8,176 @@ import { shippingService } from '../services/shippingService';
 import { paymentService } from '../services/paymentService';
 import { returnService } from '../services/returnService';
 import { reportService } from '../services/reportService';
-import { db } from '../db/store';
+import { db, DEFAULT_USER_ID } from '../db/store';
 import { PendingConfirmation } from '../db/types';
 
 export interface MCPToolDefinition {
   name: string;
+  title?: string;
   description: string;
   inputSchema: any; // JSON Schema for MCP tools/list
+  outputSchema?: any; // Output Schema when returning structured data
   requiredScope: string;
   isHighImpact?: boolean;
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    openWorldHint?: boolean;
+  };
+  _meta?: Record<string, any>;
   handler: (workspaceId: string, params: any, actorName: string) => Promise<any> | any;
 }
 
 export const mcpTools: Record<string, MCPToolDefinition> = {
+  // --- OPENAI PROFILE & COMPANY KNOWLEDGE ---
+  get_profile: {
+    name: 'get_profile',
+    title: 'Get User Profile',
+    description: 'Retrieve current authenticated user profile, workspace details, and active roles. Used by ChatGPT to identify connected accounts.',
+    inputSchema: { type: 'object', properties: {} },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        email: { type: 'string' },
+        workspace: { type: 'object' },
+        role: { type: 'string' },
+      },
+    },
+    requiredScope: 'dashboard:read',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    _meta: {
+      'openai/profile': true,
+    },
+    handler: (ws, _params, actor) => {
+      const user = db.users.get(DEFAULT_USER_ID);
+      const workspace = db.workspaces.get(ws);
+      return {
+        id: user ? user.id : 'usr_default',
+        name: user ? user.name : actor,
+        email: user ? user.email : 'owner@nexus-inventory.com',
+        workspace: {
+          id: workspace ? workspace.id : ws,
+          name: workspace ? workspace.name : 'Apex Retail Hub',
+          slug: workspace ? workspace.slug : 'apex-retail',
+          currency: workspace ? workspace.currency : 'INR',
+        },
+        role: 'OWNER',
+      };
+    },
+  },
+
+  search: {
+    name: 'search',
+    title: 'Search Company Knowledge',
+    description: 'Search catalog products, customer profiles, and active orders for company knowledge citations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Search keywords or product SKU' },
+      },
+      required: ['query'],
+    },
+    outputSchema: {
+      type: 'object',
+      properties: {
+        results: { type: 'array' },
+      },
+    },
+    requiredScope: 'dashboard:read',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    handler: (ws, { query }) => {
+      const records = reportService.searchBusinessRecords(ws, query);
+      const results: any[] = [];
+      records.products.forEach((p) => {
+        results.push({
+          id: `product:${p.sku}`,
+          title: `Product: ${p.name} (${p.sku})`,
+          url: `/products?search=${encodeURIComponent(p.sku)}`,
+          snippet: `Price: ₹${p.selling_price}, Physical Stock: ${p.physical_stock}, Available: ${p.physical_stock - p.reserved_stock}. ${p.description || ''}`,
+        });
+      });
+      records.customers.forEach((c) => {
+        results.push({
+          id: `customer:${c.id}`,
+          title: `Customer: ${c.name}`,
+          url: `/customers?search=${encodeURIComponent(c.name)}`,
+          snippet: `Address: ${c.shipping_address}, Phone: ${c.phone || 'N/A'}, Email: ${c.email || 'N/A'}.`,
+        });
+      });
+      records.orders.forEach((o) => {
+        results.push({
+          id: `order:${o.order_number}`,
+          title: `Order: ${o.order_number} (${o.customer_name})`,
+          url: `/orders?search=${encodeURIComponent(o.order_number)}`,
+          snippet: `Status: ${o.status}, Total: ₹${o.total_amount}, Payment: ${o.payment_status}.`,
+        });
+      });
+      return { results };
+    },
+  },
+
+  fetch: {
+    name: 'fetch',
+    title: 'Fetch Company Knowledge Document',
+    description: 'Fetch the full record details of a specific product, customer, or order by its document ID.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Document ID from search results (e.g. product:PRD001, order:ORD-2026-000001)' },
+      },
+      required: ['id'],
+    },
+    requiredScope: 'dashboard:read',
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+    handler: (ws, { id }) => {
+      if (id.startsWith('product:')) {
+        const sku = id.replace('product:', '');
+        const p = productService.getProduct(ws, sku);
+        return {
+          id,
+          title: `${p.name} (${p.sku})`,
+          text: `Product: ${p.name}\nSKU: ${p.sku}\nSelling Price: ₹${p.selling_price}\nPurchase Cost: ₹${p.purchase_cost}\nPhysical Stock: ${p.physical_stock}\nReserved Stock: ${p.reserved_stock}\nAvailable Stock: ${p.available_stock}\nCategory: ${p.category_name}\nDescription: ${p.description || 'None'}`,
+          url: `/products?search=${encodeURIComponent(p.sku)}`,
+        };
+      }
+      if (id.startsWith('order:')) {
+        const ordNum = id.replace('order:', '');
+        const o = orderService.getOrder(ws, ordNum);
+        const items = db.orderItems.get(o.id) || [];
+        return {
+          id,
+          title: `Order ${o.order_number}`,
+          text: `Order Number: ${o.order_number}\nCustomer: ${o.customer_name}\nStatus: ${o.status}\nPayment Status: ${o.payment_status}\nTotal Amount: ₹${o.total_amount}\nShipping Address: ${o.shipping_address}\nItems: ${items.map((i) => `${i.quantity}x ${i.product_name} (${i.sku})`).join(', ')}`,
+          url: `/orders?search=${encodeURIComponent(o.order_number)}`,
+        };
+      }
+      if (id.startsWith('customer:')) {
+        const custId = id.replace('customer:', '');
+        const c = customerService.getCustomer(ws, custId);
+        return {
+          id,
+          title: `Customer ${c.name}`,
+          text: `Name: ${c.name}\nPhone: ${c.phone || 'N/A'}\nEmail: ${c.email || 'N/A'}\nShipping Address: ${c.shipping_address}\nTotal Spent: ₹${c.total_spent || 0}\nOrder Count: ${c.order_count || 0}`,
+          url: `/customers?search=${encodeURIComponent(c.name)}`,
+        };
+      }
+      throw new Error(`Unrecognized document ID prefix in '${id}'`);
+    },
+  },
   // --- DASHBOARD & SEARCH ---
   get_dashboard_summary: {
     name: 'get_dashboard_summary',

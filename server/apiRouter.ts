@@ -13,6 +13,7 @@ import { reportService } from './services/reportService';
 import { mcpTools, mcpPrompts } from './mcp/registry';
 import { OAuthGrant } from './db/types';
 import { registerTestRunnerApi } from './tests/run_tests';
+import { dbManager } from './db/neonService';
 
 export const apiRouter = express.Router();
 
@@ -621,3 +622,62 @@ apiRouter.get('/mcp/tools', (_req: Request, res: Response) => {
 apiRouter.get('/mcp/prompts', (_req: Request, res: Response) => {
   res.json(mcpPrompts);
 });
+
+// 16. Database Management (Neon PostgreSQL & Local In-Memory)
+apiRouter.get('/database/status', (_req: Request, res: Response) => {
+  try {
+    const status = dbManager.getStatus();
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/database/ping', async (_req: Request, res: Response) => {
+  try {
+    const status = await dbManager.ping();
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/database/test', async (req: Request, res: Response) => {
+  try {
+    const { connectionString } = req.body;
+    if (!connectionString) {
+      return res.status(400).json({ error: 'Connection string is required' });
+    }
+    const result = await dbManager.testConnection(connectionString);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/database/connect', async (req: Request, res: Response) => {
+  try {
+    const { connectionString } = req.body;
+    if (!connectionString) {
+      return res.status(400).json({ error: 'Connection string is required' });
+    }
+    const result = await dbManager.connectNeon(connectionString);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+apiRouter.post('/database/disconnect', async (_req: Request, res: Response) => {
+  try {
+    const status = await dbManager.disconnectNeon();
+    res.json({
+      success: true,
+      message: 'Successfully switched back to Local Embedded ACID in-memory database.',
+      status,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+

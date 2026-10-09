@@ -38,13 +38,13 @@ async function startServer() {
   app.use('/api/oauth', oauthRouter);
 
   // 3. Remote MCP Server Streamable HTTP Endpoint (JSON-RPC 2.0 / Streamable HTTP)
-  app.post('/api/mcp', handleMcpPost);
-  app.get('/api/mcp', (_req, res) => {
+  app.post(['/api/mcp', '/mcp'], handleMcpPost);
+  app.get(['/api/mcp', '/mcp'], (_req, res) => {
     res.json({
       status: 'active',
       protocol: 'Model Context Protocol (MCP) Streamable HTTP',
       version: '2024-11-05',
-      documentation: 'Send POST requests with JSON-RPC 2.0 payloads or connect with an official MCP client.',
+      documentation: 'Send POST requests with JSON-RPC 2.0 payloads or connect with an official MCP client (Inspector, ChatGPT, Claude Desktop, Cursor).',
     });
   });
 

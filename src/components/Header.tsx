@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Search, Bell, AlertTriangle, ShieldCheck, Terminal, Plus } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Bell, AlertTriangle, ShieldCheck, Terminal, Plus, Database } from 'lucide-react';
 import { TabId } from './Sidebar';
 
 interface HeaderProps {
@@ -16,6 +16,14 @@ export const Header: React.FC<HeaderProps> = ({
   onQuickAdjustStock,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [dbIsNeon, setDbIsNeon] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch('/api/database/status')
+      .then((r) => r.json())
+      .then((data) => setDbIsNeon(!!data.isNeon))
+      .catch(() => {});
+  }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,6 +91,20 @@ export const Header: React.FC<HeaderProps> = ({
           title="Run Verification Tests"
         >
           <ShieldCheck size={18} />
+        </button>
+
+        {/* Database Status Quick Pill */}
+        <button
+          onClick={() => onSelectTab('settings')}
+          className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition cursor-pointer ${
+            dbIsNeon
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+              : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+          }`}
+          title="Click to view Database Inspector & Switch to Neon"
+        >
+          <Database size={12} className={dbIsNeon ? 'text-emerald-600' : 'text-slate-500'} />
+          <span>{dbIsNeon ? 'Neon DB' : 'Local DB'}</span>
         </button>
 
         {/* User Pill */}

@@ -10,7 +10,7 @@
       "destination": "/api/oauth/:match*"
     },
     {
-      "source": "/((?!api|.*\\..*).*)",
+      "source": "/((?!api|mcp|.*\\..*).*)",
       "destination": "/index.html"
     }
   ]

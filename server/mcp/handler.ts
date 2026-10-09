@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { mcpTools, mcpResources, mcpPrompts } from './registry';
+import { listSkills, getSkill, getSkillResource } from './skills';
 import { db, DEFAULT_WORKSPACE_ID, DEFAULT_USER_ID } from '../db/store';
 import { AuditEvent, PendingConfirmation } from '../db/types';
 
@@ -17,8 +18,6 @@ export interface AuthContext {
 export function authenticateMcpRequest(req: Request): AuthContext {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
-    // If no header provided, check query token or allow local demo access to default workspace with full scopes
-    // In production, requires Bearer token
     const token = req.query.token as string;
     if (token) {
       const grant = db.oauthGrants.get(token);
@@ -34,7 +33,6 @@ export function authenticateMcpRequest(req: Request): AuthContext {
       }
     }
 
-    // Default development fallback token check or default workspace for playground
     return {
       workspaceId: DEFAULT_WORKSPACE_ID,
       userId: DEFAULT_USER_ID,
@@ -95,12 +93,10 @@ export function authenticateMcpRequest(req: Request): AuthContext {
 }
 
 export async function handleMcpPost(req: Request, res: Response) {
-  // Support both single JSON-RPC and array of calls
   const body = req.body;
   const requestId = body?.id ?? (body?.requestId || `req_${Date.now()}`);
 
   try {
-    // Authenticate principal
     const auth = authenticateMcpRequest(req);
     const method = body.method;
 
@@ -123,11 +119,16 @@ export async function handleMcpPost(req: Request, res: Response) {
             tools: { listChanged: false },
             resources: { subscribe: false, listChanged: false },
             prompts: { listChanged: false },
+            extensions: {
+              'io.modelcontextprotocol/skills': {},
+            },
           },
           serverInfo: {
             name: 'nexus-mcp-inventory',
             version: '1.0.0',
           },
+          instructions:
+            'NexusAI Inventory & Manual Order Management System. Provides inventory ledger, catalog products, customer profiles, manual orders, warehouse packing queue, courier shipping, cash payments, and return inspection. Before modifying an order or adjusting inventory, call get_order or get_product to confirm status and stock. For high-impact operations like adjust_inventory, create_order, cancel_order, or mark_order_shipped, provide confirmation or a confirmation_token.',
         },
       });
     }
@@ -146,8 +147,16 @@ export async function handleMcpPost(req: Request, res: Response) {
     if (method === 'tools/list') {
       const toolsList = Object.values(mcpTools).map((t) => ({
         name: t.name,
+        title: t.title || t.name.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
         description: t.description,
         inputSchema: t.inputSchema,
+        outputSchema: t.outputSchema,
+        annotations: t.annotations || {
+          readOnlyHint: !t.isHighImpact,
+          destructiveHint: !!t.isHighImpact,
+          openWorldHint: false,
+        },
+        _meta: t._meta,
       }));
 
       return res.json({
@@ -304,10 +313,11 @@ export async function handleMcpPost(req: Request, res: Response) {
           jsonrpc: '2.0',
           id: requestId,
           result: {
+            structuredContent: typeof result === 'object' ? result : { data: result },
             content: [
               {
                 type: 'text',
-                text: JSON.stringify(result, null, 2),
+                text: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
               },
             ],
           },
@@ -361,6 +371,32 @@ export async function handleMcpPost(req: Request, res: Response) {
     // 7. resources/read
     if (method === 'resources/read') {
       const uri = body.params?.uri;
+
+      // Check if this is a Skill resource (SEP-2640)
+      if (uri && uri.startsWith('skill://')) {
+        const skillRes = getSkillResource(uri);
+        if (!skillRes) {
+          return res.status(404).json({
+            jsonrpc: '2.0',
+            id: requestId,
+            error: { code: -32602, message: `Skill resource not found: ${uri}` },
+          });
+        }
+        return res.json({
+          jsonrpc: '2.0',
+          id: requestId,
+          result: {
+            contents: [
+              {
+                uri,
+                mimeType: 'text/markdown',
+                text: skillRes.content,
+              },
+            ],
+          },
+        });
+      }
+
       const target = mcpResources.find((r) => r.uri === uri);
       if (!target) {
         return res.status(404).json({
@@ -385,7 +421,36 @@ export async function handleMcpPost(req: Request, res: Response) {
       });
     }
 
-    // 8. prompts/list
+    // 8. skills/list (OpenAI SEP-2640 Skills extension)
+    if (method === 'skills/list') {
+      const cursor = body.params?.cursor;
+      const catalog = listSkills(cursor);
+      return res.json({
+        jsonrpc: '2.0',
+        id: requestId,
+        result: catalog,
+      });
+    }
+
+    // 9. skills/get (OpenAI SEP-2640 Skills extension)
+    if (method === 'skills/get') {
+      const uri = body.params?.uri;
+      const skill = getSkill(uri);
+      if (!skill) {
+        return res.status(404).json({
+          jsonrpc: '2.0',
+          id: requestId,
+          error: { code: -32602, message: `Skill not found: ${uri}` },
+        });
+      }
+      return res.json({
+        jsonrpc: '2.0',
+        id: requestId,
+        result: { skill },
+      });
+    }
+
+    // 10. prompts/list
     if (method === 'prompts/list') {
       const pList = mcpPrompts.map((p) => ({
         name: p.name,
@@ -399,7 +464,7 @@ export async function handleMcpPost(req: Request, res: Response) {
       });
     }
 
-    // 9. prompts/get
+    // 11. prompts/get
     if (method === 'prompts/get') {
       const pName = body.params?.name;
       const target = mcpPrompts.find((p) => p.name === pName);

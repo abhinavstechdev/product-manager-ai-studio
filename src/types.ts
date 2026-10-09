@@ -172,3 +172,21 @@ export interface PendingConfirmation {
   expires_at: string;
   status: 'PENDING' | 'CONFIRMED' | 'REJECTED';
 }
+
+export interface DatabaseStatus {
+  mode: 'LOCAL_EMBEDDED' | 'NEON_POSTGRES';
+  isNeon: boolean;
+  status: 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  host: string;
+  database: string;
+  user?: string;
+  ssl?: boolean;
+  latencyMs?: number;
+  neonProject?: string;
+  tablesCount?: number;
+  tables?: string[];
+  message?: string;
+  lastConnectedAt?: string;
+  connectionStringMasked?: string;
+}
+
