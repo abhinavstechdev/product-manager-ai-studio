@@ -19,6 +19,9 @@ import {
   Eye,
   EyeOff,
   PowerOff,
+  Terminal,
+  Play,
+  Sparkles,
 } from 'lucide-react';
 import { DatabaseStatus } from '../types';
 import { apiFetch } from '../lib/api';
@@ -43,6 +46,14 @@ export const SettingsView: React.FC = () => {
 
   // Action status and alerts
   const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [migrating, setMigrating] = useState<boolean>(false);
+  const [migrationResult, setMigrationResult] = useState<{
+    success: boolean;
+    tablesCreatedOrVerified: number;
+    executedStatements: number;
+    message: string;
+    details?: string[];
+  } | null>(null);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; latencyMs?: number } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -188,6 +199,7 @@ export const SettingsView: React.FC = () => {
       setActionLoading(true);
       setErrorMessage(null);
       setSuccessMessage(null);
+      setMigrationResult(null);
 
       const res = await apiFetch<{ success: boolean; message: string; status: DatabaseStatus }>('/api/database/disconnect', {
         method: 'POST',
@@ -199,6 +211,34 @@ export const SettingsView: React.FC = () => {
       setErrorMessage(err.message || 'Failed to switch database.');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Run automated database migration (server/db/schema.sql)
+  const handleRunMigration = async () => {
+    try {
+      setMigrating(true);
+      setErrorMessage(null);
+      setMigrationResult(null);
+
+      const res = await apiFetch<{
+        success: boolean;
+        tablesCreatedOrVerified: number;
+        executedStatements: number;
+        message: string;
+        details?: string[];
+      }>('/api/database/migrate', {
+        method: 'POST',
+      });
+
+      setMigrationResult(res);
+      setSuccessMessage(res.message);
+      // Reload db status to reflect newly created/synced tables
+      await loadDatabaseStatus();
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Automated migration failed.');
+    } finally {
+      setMigrating(false);
     }
   };
 
@@ -401,25 +441,60 @@ export const SettingsView: React.FC = () => {
                 </div>
               )}
 
-              {/* Table List Inspector */}
-              {dbStatus.tables && dbStatus.tables.length > 0 && (
-                <div>
-                  <div className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+              {/* Table List Inspector & Automated Migration Action */}
+              <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
+                  <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                     <Layers size={14} className="text-indigo-600" />
-                    <span>Synchronized Schema Tables ({dbStatus.tables.length})</span>
+                    <span>Synchronized Schema Tables ({dbStatus.tables?.length || 0})</span>
                   </div>
+
+                  {/* 1-Click Automated Migration Runner Button */}
+                  <button
+                    onClick={handleRunMigration}
+                    disabled={migrating || actionLoading}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-lg text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50"
+                    title="Automatically run server/db/schema.sql migration on active database"
+                  >
+                    {migrating ? (
+                      <RefreshCw size={13} className="animate-spin text-white" />
+                    ) : (
+                      <Sparkles size={13} className="text-amber-300" />
+                    )}
+                    <span>{migrating ? 'Applying schema.sql...' : 'Automate schema.sql Migration'}</span>
+                  </button>
+                </div>
+
+                {/* Migration Feedback Result Banner */}
+                {migrationResult && (
+                  <div className="mb-3 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs space-y-1.5">
+                    <div className="flex items-center gap-2 font-bold text-emerald-800">
+                      <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                      <span>{migrationResult.message}</span>
+                    </div>
+                    {migrationResult.details && migrationResult.details.length > 0 && (
+                      <div className="text-slate-600 pl-6 space-y-0.5 font-mono text-[11px]">
+                        {migrationResult.details.map((d, i) => (
+                          <div key={i}>• {d}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {dbStatus.tables && dbStatus.tables.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {dbStatus.tables.map((t) => (
                       <span
                         key={t}
-                        className="px-2.5 py-1 bg-slate-100 border border-slate-200 rounded-md font-mono text-[11px] text-slate-700"
+                        className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md font-mono text-[11px] text-slate-700 transition"
                       >
                         {t}
                       </span>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ) : null}
         </div>
@@ -647,13 +722,18 @@ export const SettingsView: React.FC = () => {
               <HelpCircle size={14} className="text-indigo-600" />
               <span>Where do I find my Neon Database connection string?</span>
             </div>
-            <ol className="list-decimal pl-5 space-y-1 text-slate-600 leading-relaxed">
+            <ol className="list-decimal pl-5 space-y-1.5 text-slate-600 leading-relaxed">
               <li>
                 Log into your Neon console at <a href="https://console.neon.tech" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">console.neon.tech</a>.
               </li>
               <li>Select your project and go to the <strong>Dashboard</strong> or <strong>Connection Details</strong> widget.</li>
               <li>Choose <strong>PostgreSQL</strong> or <strong>Pooled connection</strong> and copy the connection string.</li>
-              <li>Paste the string into the input field above and click <strong>Connect &amp; Activate Neon Database</strong>. Tables and schemas are automatically created.</li>
+              <li>
+                Paste the string into the input field above and click <strong>Connect &amp; Activate Neon Database</strong>.
+              </li>
+              <li className="font-semibold text-emerald-800 bg-emerald-50/80 p-2 rounded-lg border border-emerald-200">
+                ✨ Automated Migration: You do <span className="underline">not</span> need to run <code className="bg-emerald-100 px-1 py-0.5 rounded text-emerald-900 font-mono">psql -f server/db/schema.sql</code> or use Neon SQL Editor manually! The server automatically executes and validates all DDL statements upon connecting, or anytime you click "Automate schema.sql Migration".
+              </li>
             </ol>
           </div>
         </div>

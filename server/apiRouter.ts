@@ -668,6 +668,15 @@ apiRouter.post('/database/connect', async (req: Request, res: Response) => {
   }
 });
 
+apiRouter.post('/database/migrate', async (_req: Request, res: Response) => {
+  try {
+    const result = await dbManager.executeSchemaMigration();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 apiRouter.post('/database/disconnect', async (_req: Request, res: Response) => {
   try {
     const status = await dbManager.disconnectNeon();

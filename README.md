@@ -86,10 +86,16 @@ Designed for serverless deployment on **Vercel** with a free-tier managed Postgr
    ```
    postgres://username:password@ep-sample-1234.us-east-2.aws.neon.tech/neondb?sslmode=require
    ```
-4. Run the database migration script provided in `server/db/schema.sql` using Neon SQL Editor or `psql`:
-   ```bash
-   psql "YOUR_NEON_DATABASE_URL" -f server/db/schema.sql
-   ```
+4. **Automated Migration (No Manual SQL Execution Needed)**:
+   - **Method A (Web Dashboard - Recommended)**: Open **Settings** in the web app, paste your connection string under **Connect to Neon PostgreSQL**, and click **Connect & Activate Neon Database**. All 18 schema tables are created, verified, and migrated automatically in one step.
+   - **Method B (Automated CLI)**: Run `npm run db:migrate` with your database URL:
+     ```bash
+     DATABASE_URL="YOUR_NEON_DATABASE_URL" npm run db:migrate
+     ```
+   - **Method C (Manual Fallback)**: If you prefer manual execution via `psql` or the Neon SQL Editor:
+     ```bash
+     psql "YOUR_NEON_DATABASE_URL" -f server/db/schema.sql
+     ```
 
 ### Step 2: Configure Environment Variables
 Create `.env` using `.env.example`:
