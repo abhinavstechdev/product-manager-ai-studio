@@ -9,6 +9,41 @@
     <meta property="og:description" content="Production AI-driven Inventory, Product, Customer &amp; Manual Order Management platform with Streamable HTTP Remote MCP Server and OAuth 2.1 authorization." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        try {
+          var origFetch = window.fetch;
+          var currentFetch = origFetch;
+          Object.defineProperty(window, 'fetch', {
+            configurable: true,
+            enumerable: true,
+            get: function() {
+              return currentFetch;
+            },
+            set: function(val) {
+              currentFetch = val;
+            }
+          });
+        } catch (e) {
+          try {
+            if (typeof Window !== 'undefined' && Window.prototype) {
+              var protoFetch = Window.prototype.fetch || window.fetch;
+              var currentProtoFetch = protoFetch;
+              Object.defineProperty(Window.prototype, 'fetch', {
+                configurable: true,
+                enumerable: true,
+                get: function() {
+                  return currentProtoFetch;
+                },
+                set: function(val) {
+                  currentProtoFetch = val;
+                }
+              });
+            }
+          } catch (_) {}
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
